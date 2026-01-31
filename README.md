@@ -1,17 +1,12 @@
 # DR Platform
 
-A real-time abuse detection platform — streaming telemetry through Kafka into detection, alerting, and investigation layers.
+Real-time Claude API abuse detection platform — streaming telemetry through Kafka into detection, alerting, and investigation layers.
 
-## Vision
-
-Build a full detection & response pipeline that ingests API events, enriches and normalizes them, runs windowed detection rules (rate abuse, prompt injection, token stuffing), routes alerts by severity, and provides dashboards and investigation tooling. The platform progresses through phases:
-
-## What's here so far
+## What's here
 
 - 3-broker Kafka cluster (Confluent CP 7.6.0) with ZooKeeper
 - Kafka UI for topic/consumer group inspection
-- Simple producer (`producer.py`) that sends randomized security events (login, logout, file_access, network_connection) to the `security-events` topic
-- Simple consumer (`consumer.py`) that reads from the `security-events` topic and prints events to stdout
+- Event generator (`producer.py`) — simulates Claude API telemetry with configurable normal and abusive user profiles
 
 ## Setup
 
@@ -20,46 +15,49 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-This installs Python deps (`confluent-kafka`, `protobuf`), pulls Docker images, and sets up a virtualenv.
+Installs Python deps (`confluent-kafka`, `protobuf`), pulls Docker images, and sets up a virtualenv.
 
 ## Run
 
 ```bash
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-## Create the topic
+This starts ZooKeeper, 3 Kafka brokers, Kafka UI, and the event generator.
 
-Via CLI:
+## Generator configuration
 
-```bash
-docker exec dr_platform-kafka-1-1 kafka-topics --create --topic security-events --partitions 3 --replication-factor 3 --bootstrap-server localhost:29092
-```
-
-Or create it manually through Kafka UI at [http://localhost:8080](http://localhost:8080).
-
-## Produce test events
+The generator runs inside Docker with defaults (8 normal users, 1 rate abuser, 1 prompt injector, 1 token abuser, 50 events/sec). To customize, edit the `command` in `docker/docker-compose.yml` or run locally:
 
 ```bash
 source .venv/bin/activate
-python producer.py
+python producer.py --normal 20 --rate-abusers 2 --injection-abusers 2 --token-abusers 1 --eps 100
 ```
 
-This sends 10k sample security events into the `security-events` topic.
-
-## Consume events
-
-In a separate terminal:
+## Stop
 
 ```bash
-source .venv/bin/activate
-python consumer.py
+docker compose -f docker/docker-compose.yml down
 ```
 
-This joins the `security-processor` consumer group, reads from the `security-events` topic (starting from the earliest offset), and prints each event to the console. Stop it with `Ctrl+C`.
+## Clean restart (wipes all Kafka/ZooKeeper data)
+
+```bash
+docker compose -f docker/docker-compose.yml down -v
+docker compose -f docker/docker-compose.yml up -d
+```
+
+The `-v` flag removes volumes. Use this if brokers fail to start with `NodeExistsException` or you want a fresh topic state.
+
+## Rebuild after code changes
+
+```bash
+docker compose -f docker/docker-compose.yml up -d --build
+```
 
 ## Verify
 
-- Check container health: `docker compose ps`
+- Container health: `docker compose -f docker/docker-compose.yml ps`
 - Kafka UI: [http://localhost:8080](http://localhost:8080)
-- Brokers are available on `localhost:9092`, `localhost:9093`, `localhost:9094`
+- Generator logs: `docker compose -f docker/docker-compose.yml logs -f generator`
+- Brokers: `localhost:9092`, `localhost:9093`, `localhost:9094`

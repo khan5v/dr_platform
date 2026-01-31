@@ -11,7 +11,7 @@ if __name__ == "__main__":
         }
     )
 
-    consumer.subscribe(["security-events"])
+    consumer.subscribe(["raw-api-events"])
 
     try:
         while True:
@@ -23,7 +23,7 @@ if __name__ == "__main__":
                 continue
 
             event = json.loads(msg.value().decode("utf-8"))
-            print(f"Consumed event from {event['host']}: {event}")
+            print(f"Consumed event: {event}")
 
     except KeyboardInterrupt:
         pass

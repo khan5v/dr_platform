@@ -61,3 +61,16 @@ services:
       - kafka-2
       - kafka-3
       - zookeeper
+
+  generator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: >
+      python producer.py
+      --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
+      --eps 50
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
