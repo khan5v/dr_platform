@@ -4,7 +4,7 @@ services:
     ports:
       - "2181:2181"
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181      
+      ZOOKEEPER_CLIENT_PORT: 2181
 
   kafka-1:
     image: confluentinc/cp-kafka:7.6.0
@@ -20,6 +20,12 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
     depends_on:
       - zookeeper
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   kafka-2:
     image: confluentinc/cp-kafka:7.6.0
     ports:
@@ -34,6 +40,12 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
     depends_on:
       - zookeeper
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9093"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   kafka-3:
     image: confluentinc/cp-kafka:7.6.0
     ports:
@@ -48,6 +60,12 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
     depends_on:
       - zookeeper
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9094"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     ports:
@@ -71,6 +89,28 @@ services:
       --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
       --eps 50
     depends_on:
-      - kafka-1
-      - kafka-2
-      - kafka-3
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: >
+      python consumer.py
+      --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+      generator:
+        condition: service_started
+    deploy:
+      replicas: 3
