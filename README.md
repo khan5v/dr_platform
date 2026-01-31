@@ -11,6 +11,7 @@ Build a full detection & response pipeline that ingests API events, enriches and
 - 3-broker Kafka cluster (Confluent CP 7.6.0) with ZooKeeper
 - Kafka UI for topic/consumer group inspection
 - Simple producer (`producer.py`) that sends randomized security events (login, logout, file_access, network_connection) to the `security-events` topic
+- Simple consumer (`consumer.py`) that reads from the `security-events` topic and prints events to stdout
 
 ## Setup
 
@@ -45,6 +46,17 @@ python producer.py
 ```
 
 This sends 10k sample security events into the `security-events` topic.
+
+## Consume events
+
+In a separate terminal:
+
+```bash
+source .venv/bin/activate
+python consumer.py
+```
+
+This joins the `security-processor` consumer group, reads from the `security-events` topic (starting from the earliest offset), and prints each event to the console. Stop it with `Ctrl+C`.
 
 ## Verify
 
