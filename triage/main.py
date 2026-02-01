@@ -122,7 +122,7 @@ def main():
         help="Use deterministic mock triage instead of Claude API",
     )
     parser.add_argument(
-        "--anthropic-model", default="claude-haiku-35-20241022",
+        "--anthropic-model", default="claude-haiku-4-5-20251001",
         help="Claude model for LLM triage (default: Haiku for speed/cost)",
     )
     args = parser.parse_args()

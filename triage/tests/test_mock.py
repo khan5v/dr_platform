@@ -69,7 +69,7 @@ class TestMockTriage:
         result = mock_triage(_alert(
             rule_id="token_abuse", severity="high", event_count=6,
             avg_input_tokens=160000, cache_hit_rate=0.0,
-            sample_size=6, models_used=["claude-sonnet-4-20250514"],
+            sample_size=6, models_used=["claude-sonnet-4-5-20250929"],
         ))
         assert result["verdict"] in ("true_positive", "needs_investigation")
         assert result["tier"] in ("gold", "silver")

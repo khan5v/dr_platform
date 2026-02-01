@@ -235,10 +235,10 @@ class TestAlertSchema:
             alerts.extend(engine.evaluate(
                 _event(ts_offset=-300 + i * 50, user_id="u",
                        input_tokens=160_000, cache_read_input_tokens=0,
-                       model="claude-sonnet-4-20250514")
+                       model="claude-sonnet-4-5-20250929")
             ))
         assert len(alerts) == 1
         ev = alerts[0]["evidence"]
         assert ev["avg_input_tokens"] == 160_000
         assert ev["cache_hit_rate"] == 0.0
-        assert "claude-sonnet-4-20250514" in ev["models_used"]
+        assert "claude-sonnet-4-5-20250929" in ev["models_used"]

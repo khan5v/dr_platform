@@ -132,7 +132,7 @@ The triage service classifies alerts into SOC response tiers:
 
 **Real Claude triage:**
 
-1. Write your API key to the secrets file (gitignored):
+1. Create or grab your API key from the [Anthropic Console](https://platform.claude.com/settings/keys), then write it to the secrets file (gitignored):
    ```bash
    echo "sk-ant-..." > secrets/anthropic_api_key
    ```
@@ -142,14 +142,18 @@ The triage service classifies alerts into SOC response tiers:
    docker compose -f docker/docker-compose.yml up -d --build
    ```
 
-The model defaults to `claude-haiku-35-20241022`. To change it, set `ANTHROPIC_MODEL` before starting:
+The model defaults to `claude-haiku-4-5-20251001`. To change it, set `ANTHROPIC_MODEL` before starting:
 
 ```bash
-export ANTHROPIC_MODEL=claude-sonnet-4-20250514
+export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 **Cost warning:** At 50 eps the generator produces a steady stream of alerts. With real triage (especially Opus), credits burn fast. Lower `--eps` to 5-10 in `docker-compose.yml` when using a real API key.
+
+**Verifying the pipeline is talking to the model:** check your key in the [Anthropic Console](https://platform.claude.com/settings/keys). The "Last Used At" timestamp updating and the cost incrementing are the clearest indicators that real triage calls are hitting the API.
+
+![API key usage showing last-used date and cost](docs/api-key-usage.png)
 
 The API key is mounted via Docker Compose secrets at `/run/secrets/anthropic_api_key` — it never appears in `docker inspect`, env dumps, or process listings.
 
