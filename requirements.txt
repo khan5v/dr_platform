@@ -1,0 +1,11 @@
+# Runtime dependencies — pinned for reproducible installs.
+# Used by Dockerfile and setup.sh.
+# To regenerate: pip freeze (then separate dev deps into requirements-dev.txt)
+certifi==2026.1.4
+charset-normalizer==3.4.4
+confluent-kafka==2.13.0
+fastavro==1.12.1
+idna==3.11
+protobuf==6.33.5
+requests==2.32.5
+urllib3==2.6.3

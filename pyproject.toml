@@ -1,0 +1,19 @@
+[project]
+name = "dr-platform"
+version = "0.1.0"
+description = "Real-time Claude API abuse detection platform"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "confluent-kafka>=2.6",
+    "protobuf>=5.29",
+    "requests>=2.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["detector/tests"]

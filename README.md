@@ -31,11 +31,35 @@ docker/
 
 Each detector replica owns a partition. Events are keyed by `user_id`, so a user's events always land on the same partition — keeping per-user sliding windows consistent.
 
+## Prerequisites
+
+- Python 3.12+
+- Docker Desktop (with `docker compose` plugin)
+- macOS: Homebrew (for `librdkafka`)
+- Linux: `apt-get` or `dnf` (for `librdkafka-dev`)
+
 ## Setup
 
 ```bash
 chmod +x setup.sh && ./setup.sh
 ```
+
+The setup script will:
+1. Create a `.venv` virtual environment (if it doesn't exist)
+2. Install system dependencies (`librdkafka` via Homebrew/apt/dnf)
+3. Install pinned Python packages from `requirements-dev.txt`
+4. Pull all required Docker images
+5. Install `kcat` (optional Kafka CLI tool)
+
+## Dependency management
+
+| File | Purpose |
+|---|---|
+| `pyproject.toml` | Canonical dependency spec with version ranges |
+| `requirements.txt` | Pinned runtime deps (used by Dockerfile) |
+| `requirements-dev.txt` | Runtime + test deps (used by setup.sh) |
+
+To add a new dependency: add it to `pyproject.toml`, install it, then regenerate the pinned files with `pip freeze`.
 
 ## Run (Docker)
 
