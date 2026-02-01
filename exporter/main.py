@@ -127,6 +127,11 @@ triage_gold_total = Counter(
     "Gold-tier escalations (immediate response required)",
     ["rule_id"],
 )
+triage_by_model_total = Counter(
+    "dr_triage_by_model_total",
+    "Triage decisions by actual model used (mock = deterministic fallback)",
+    ["model"],
+)
 
 running = True
 
@@ -200,6 +205,9 @@ def _process_triage(data: dict):
 
     if tier == "gold":
         triage_gold_total.labels(rule_id=rule_id).inc()
+
+    model = data.get("model", "unknown")
+    triage_by_model_total.labels(model=model).inc()
 
 
 # ---------------------------------------------------------------------------

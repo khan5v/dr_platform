@@ -77,21 +77,25 @@ def _read_api_key() -> str | None:
     return os.environ.get("ANTHROPIC_API_KEY")
 
 
-def _triage_with_llm(alert: dict, model: str) -> dict:
-    """Call the Anthropic API for real LLM triage."""
+def _triage_with_llm(alert: dict, model: str) -> tuple[dict, str]:
+    """Call the Anthropic API for real LLM triage.
+
+    Returns (triage_result, model_used) — model_used is "mock" when
+    the LLM call fails and we fall back to deterministic triage.
+    """
     try:
         import anthropic
     except ImportError:
         print("anthropic package not installed — falling back to mock",
               file=sys.stderr)
-        return mock_triage(alert)
+        return mock_triage(alert), "mock"
 
     api_key = _read_api_key()
     if not api_key:
         print("No API key found (checked /run/secrets/anthropic_api_key "
               "and ANTHROPIC_API_KEY env) — falling back to mock",
               file=sys.stderr)
-        return mock_triage(alert)
+        return mock_triage(alert), "mock"
 
     client = anthropic.Anthropic(api_key=api_key)
     system_prompt = build_system_prompt()
@@ -104,11 +108,16 @@ def _triage_with_llm(alert: dict, model: str) -> dict:
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
-        text = response.content[0].text
-        return json.loads(text)
+        text = response.content[0].text.strip()
+        # Strip markdown code fences if the model wraps its JSON output
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]  # drop ```json line
+            text = text.rsplit("```", 1)[0].strip()
+        return json.loads(text), model
     except (json.JSONDecodeError, anthropic.APIError, IndexError) as e:
-        print(f"LLM triage failed ({e}), falling back to mock", file=sys.stderr)
-        return mock_triage(alert)
+        print(f"LLM triage failed ({e}), falling back to mock",
+              file=sys.stderr)
+        return mock_triage(alert), "mock"
 
 
 def main():
@@ -169,8 +178,7 @@ def main():
                 triage_result = mock_triage(alert)
                 model_used = "mock"
             else:
-                triage_result = _triage_with_llm(alert, args.anthropic_model)
-                model_used = args.anthropic_model
+                triage_result, model_used = _triage_with_llm(alert, args.anthropic_model)
 
             # --- Assemble output ---
             output = {

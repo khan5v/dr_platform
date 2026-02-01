@@ -218,6 +218,8 @@ Open Grafana at [http://localhost:3001](http://localhost:3001) (no login require
 | Pipeline Throughput | Should hover around ~50 eps. Drops to 0 = pipeline is broken. |
 | Kafka Brokers | Must be 3. Fewer = degraded replication. |
 | Detector / Exporter Lag | Unprocessed messages. Should stay <100. Rising = can't keep up. |
+| LLM Success Rate | % of triage decisions from the real LLM. <100% in LLM mode = fallbacks happening. |
+| Triage Model Split | Donut chart — LLM vs mock. In LLM mode, mock slice = degraded triage. |
 | Kafka Topic Throughput | msgs/sec by topic. `alerts` should be <<1% of `raw-api-events`. |
 | Consumer Lag by Partition | Even distribution = healthy. One partition lagging = that replica is sick. |
 | Simulated API Response Latency | p50/p95/p99 of simulated Claude API latency from the generator (not internal pipeline latency). p99 spiking while p50 stays flat = large-context outliers. |

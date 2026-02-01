@@ -13,7 +13,7 @@
       "type": "stat",
       "title": "Pipeline Throughput",
       "description": "Current events/sec flowing through the exporter. If this drops to 0, the pipeline is broken. Expect ~50 eps steady state.",
-      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "gridPos": { "x": 0, "y": 0, "w": 5, "h": 4 },
       "targets": [{ "expr": "dr_events_per_second", "legendFormat": "eps" }],
       "fieldConfig": {
         "defaults": {
@@ -36,7 +36,7 @@
       "type": "stat",
       "title": "Kafka Brokers",
       "description": "Alive brokers in the cluster. Must be 3 for full replication. <3 means degraded replication and risk of data loss if another broker fails.",
-      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "gridPos": { "x": 5, "y": 0, "w": 5, "h": 4 },
       "targets": [{ "expr": "kafka_brokers", "legendFormat": "brokers" }],
       "fieldConfig": {
         "defaults": {
@@ -59,7 +59,7 @@
       "type": "stat",
       "title": "Detector Lag",
       "description": "Unprocessed messages for the detection-engine consumer group. Should stay <100. Rising lag = detectors can't keep up with ingestion. Scale replicas or investigate slow rules.",
-      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "gridPos": { "x": 10, "y": 0, "w": 5, "h": 4 },
       "targets": [{ "expr": "sum(kafka_consumergroup_lag{consumergroup=\"detection-engine\"})", "legendFormat": "messages" }],
       "fieldConfig": {
         "defaults": {
@@ -82,7 +82,7 @@
       "type": "stat",
       "title": "Exporter Lag",
       "description": "Unprocessed messages for the metrics-exporter. If this grows, these dashboards show stale data — monitoring itself is degraded.",
-      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "gridPos": { "x": 15, "y": 0, "w": 5, "h": 4 },
       "targets": [{ "expr": "sum(kafka_consumergroup_lag{consumergroup=\"metrics-exporter\"})", "legendFormat": "messages" }],
       "fieldConfig": {
         "defaults": {
@@ -100,13 +100,58 @@
       },
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "LLM Success Rate",
+      "description": "Percentage of triage decisions produced by the real LLM (not mock fallback). 100% = all calls hitting Claude. <100% in LLM mode = API errors, bad model name, or unparseable responses. In mock mode this reads 0% — that's expected.",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sum(rate(dr_triage_by_model_total{model!=\"mock\"}[5m])) / sum(rate(dr_triage_by_model_total[5m]))", "legendFormat": "success" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 0.95 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "noValue": "No data"
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+
+    {
+      "id": 10,
+      "type": "piechart",
+      "title": "Triage Model Split",
+      "description": "Proportion of triage decisions by model. In LLM mode you want to see the actual model name dominating. A 'mock' slice means fallbacks are happening — check triage logs.",
+      "gridPos": { "x": 0, "y": 4, "w": 6, "h": 8 },
+      "targets": [{ "expr": "sum by (model) (increase(dr_triage_by_model_total[15m]))", "legendFormat": "{{ model }}" }],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "mock" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      },
+      "options": {
+        "pieType": "donut",
+        "legend": { "displayMode": "table", "placement": "right", "values": ["percent", "value"] },
+        "tooltip": { "mode": "single" },
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
 
     {
       "id": 5,
       "type": "timeseries",
       "title": "Kafka Topic Throughput",
       "description": "Messages/sec written to each topic — the ground truth for pipeline health. raw-api-events should track the generator's target EPS. alerts should be <<1% of raw events; if they approach parity, detection rules are miscalibrated.",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "gridPos": { "x": 6, "y": 4, "w": 9, "h": 8 },
       "targets": [{ "expr": "sum by (topic) (rate(kafka_topic_partition_current_offset[1m]))", "legendFormat": "{{ topic }}" }],
       "fieldConfig": {
         "defaults": {
@@ -125,7 +170,7 @@
       "type": "timeseries",
       "title": "Consumer Lag by Partition",
       "description": "Per-partition lag for the detection engine's 3 replicas. Even distribution = healthy partitioning. One partition lagging while others are fine = that specific replica is unhealthy or overloaded.",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "gridPos": { "x": 15, "y": 4, "w": 9, "h": 8 },
       "targets": [{ "expr": "kafka_consumergroup_lag{consumergroup=\"detection-engine\"}", "legendFormat": "{{ topic }}/p{{ partition }}" }],
       "fieldConfig": {
         "defaults": {

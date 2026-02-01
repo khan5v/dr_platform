@@ -134,7 +134,7 @@ services:
       --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
       --input-topic alerts
       --output-topic triage-results
-      --anthropic-model ${ANTHROPIC_MODEL:-claude-haiku-35-20241022}
+      --anthropic-model ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       --mock
     secrets:
       - anthropic_api_key
