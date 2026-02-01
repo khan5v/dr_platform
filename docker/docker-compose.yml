@@ -120,3 +120,66 @@ services:
         condition: service_started
     deploy:
       replicas: 3
+
+  # ---------------------------------------------------------------------------
+  # Monitoring stack
+  # ---------------------------------------------------------------------------
+
+  exporter:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: >
+      python -m exporter.main
+      --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
+      --port 9090
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+      generator:
+        condition: service_started
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    command:
+      - "--kafka.server=kafka-1:29092"
+      - "--kafka.server=kafka-2:29092"
+      - "--kafka.server=kafka-3:29092"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    # Bind-mount our scrape config into the path the Prometheus image
+    # reads on startup.  :ro = read-only inside the container.
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - exporter
+      - kafka-exporter
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

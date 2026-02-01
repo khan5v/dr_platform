@@ -1,0 +1,245 @@
+{
+  "title": "Detection & Threat Analysis",
+  "uid": "dr-detection-alerts",
+  "editable": true,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Alert Rate",
+      "description": "Alerts per minute across all rules. Baseline with current traffic: ~2-5/min. Significant deviation means either new abuse patterns or detection rules need tuning.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(dr_alerts_total[5m])) * 60", "legendFormat": "alerts/min" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Critical (5min)",
+      "description": "Critical alerts in the last 5 minutes. These are prompt injection clusters — coordinated attempts to bypass safety systems. Requires immediate investigation.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(increase(dr_alerts_total{severity=\"critical\"}[5m]))", "legendFormat": "critical" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "High (5min)",
+      "description": "High-severity alerts (rate abuse + token stuffing). Higher volume is expected. Watch the trend — a sudden jump signals a new abuser or changed behavior.",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(increase(dr_alerts_total{severity=\"high\"}[5m]))", "legendFormat": "high" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "orange", "value": 10 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Unique Offenders",
+      "description": "Distinct users triggering alerts in the last 5 minutes. 1-2 = targeted abuse from known actors. Many = possible systemic issue, rule miscalibration, or coordinated campaign.",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "count(count by (user_id) (increase(dr_alerts_by_user_total[5m]) > 0))", "legendFormat": "users" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Alert Rate by Rule",
+      "description": "Which detection rules are firing and when. Correlate spikes across rules — the same user triggering multiple rules simultaneously indicates coordinated multi-vector abuse, which is higher priority than single-rule triggers.",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum by (rule_id) (rate(dr_alerts_total[1m]))", "legendFormat": "{{ rule_id }}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 80, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "prompt_injection" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "rate_abuse" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "token_abuse" }, "properties": [{ "id": "color", "value": { "fixedColor": "#E0B400", "mode": "fixed" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum", "max"] } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Safety Trigger Rate by Type",
+      "description": "Upstream signal before alerts fire. Rising safety triggers that don't produce alerts = thresholds may be too high. Safety triggers dropping while alerts stay high = detection rules are catching aggregate patterns that individual triggers miss.",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum by (trigger_type) (rate(dr_safety_triggers_total[1m]))", "legendFormat": "{{ trigger_type }}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 25, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "prompt_injection" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "harmful_content" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "policy_violation" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum", "mean"] } }
+    },
+
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Top Users by Alert Count",
+      "description": "The usual suspects — users with the most detection alerts in the last 5 minutes. In a real SOC these get escalated for investigation. Look for users appearing across multiple rule types — multi-vector abuse is higher priority.",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [{ "expr": "topk(10, sum by (user_id) (increase(dr_alerts_by_user_total[5m])))", "legendFormat": "{{ user_id }}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Top Users by Event Volume",
+      "description": "Raw activity leaders. Cross-reference with the alert panel: high-volume + no alerts = normal power user. High-volume + alerts = confirmed abuse. Present here but absent in alerts = potentially evading detection thresholds.",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [{ "expr": "topk(10, sum by (user_id) (rate(dr_events_by_user_total[5m])))", "legendFormat": "{{ user_id }}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Rate Limit / Request Ratio",
+      "description": "Rate-limit events as a fraction of total API requests. Normal: <1%. Active abuse: >5%. This is a leading indicator — it catches rate abusers before the sliding-window detection rule fires.",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(dr_events_total{event_type=\"rate_limit_event\"}[1m])) / (sum(rate(dr_events_total{event_type=\"api_request\"}[1m])) > 0)",
+          "legendFormat": "rate_limit / api_request ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "showPoints": "never" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } }
+    },
+    {
+      "id": 10,
+      "type": "heatmap",
+      "title": "Input Token Distribution",
+      "description": "Token usage heatmap over time. Normal users cluster at low token counts (100-8K). Token abusers form a distinct band at 150K+. A bimodal distribution is the visual fingerprint of token stuffing abuse.",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(increase(dr_input_tokens_per_request_bucket[1m])) by (le)",
+          "legendFormat": "{{ le }}",
+          "format": "heatmap"
+        }
+      ],
+      "options": {
+        "calculate": false,
+        "color": { "scheme": "Spectral", "mode": "scheme", "steps": 64 },
+        "yAxis": { "unit": "short" },
+        "cellGap": 1
+      }
+    }
+  ]
+}

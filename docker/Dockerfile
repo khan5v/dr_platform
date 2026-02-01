@@ -15,3 +15,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code (changes frequently)
 COPY generator/ generator/
 COPY detector/ detector/
+COPY exporter/ exporter/

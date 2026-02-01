@@ -2,34 +2,37 @@
 
 Real-time Claude API abuse detection platform — streaming telemetry through Kafka into a rule-based detection engine.
 
-## Architecture
+## System Diagram
 
-```
-generator/          → Simulates Claude API traffic (normal + abusive users)
-    main.py             Kafka producer with configurable user profiles
+```mermaid
+flowchart LR
+    subgraph Data Pipeline
+        G["Generator<br>50 eps"] -->|JSON events<br>keyed by user_id| K["Kafka Cluster<br>3 brokers"]
+        K -->|raw-api-events<br>3 partitions| D["Detector ×3<br>sliding-window rules"]
+        D -->|alerts| K
+    end
 
-detector/           → Detection engine and rules
-    main.py             Kafka consumer: reads events, runs engine, produces alerts
-    engine.py           Core engine: routes events to rules via sliding windows
-    sliding_window.py   Time-based window with drift guard
-    rules/              Detection-as-code (Python classes, not YAML)
-        rate_abuse.py       >60 requests in 60s
-        prompt_injection.py >3 safety triggers in 5min
-        token_abuse.py      >150K avg tokens + <5% cache in 15min
-    tests/              Unit + integration tests
+    subgraph Monitoring
+        K -->|raw-api-events<br>+ alerts| E["Exporter<br>Kafka → Prometheus metrics"]
+        KE["Kafka Exporter<br>broker & lag metrics"] ---|scrape :9308| P["Prometheus<br>TSDB"]
+        E ---|scrape :9090| P
+        P ---|PromQL queries| GF["Grafana<br>:3001"]
+    end
 
-docker/
-    Dockerfile          Shared image for all services
-    docker-compose.yml  Full stack: 3-broker Kafka + generator + detector
+    KE -.-|connects| K
+
+    style G fill:#4a9,stroke:#333,color:#fff
+    style D fill:#e74,stroke:#333,color:#fff
+    style K fill:#36a,stroke:#333,color:#fff
+    style E fill:#a6c,stroke:#333,color:#fff
+    style P fill:#f90,stroke:#333,color:#fff
+    style GF fill:#5b5,stroke:#333,color:#fff
+    style KE fill:#a6c,stroke:#333,color:#fff
 ```
 
 ## Data flow
 
-```
-[generator] → raw-api-events (3 partitions) → [detector ×3] → alerts topic
-```
-
-Each detector replica owns a partition. Events are keyed by `user_id`, so a user's events always land on the same partition — keeping per-user sliding windows consistent.
+Events are keyed by `user_id`, so a user's events always land on the same Kafka partition — keeping per-user sliding windows consistent across the 3 detector replicas.
 
 ## Prerequisites
 
@@ -67,7 +70,7 @@ To add a new dependency: add it to `pyproject.toml`, install it, then regenerate
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-Starts ZooKeeper, 3 Kafka brokers, Kafka UI, the generator (50 eps), and 3 detector replicas.
+Starts the full stack (14 containers): ZooKeeper, 3 Kafka brokers, Kafka UI, generator, 3 detector replicas, metrics exporter, kafka-exporter, Prometheus, and Grafana.
 
 ## Run tests
 
@@ -90,10 +93,27 @@ python -m generator.main --bootstrap-servers localhost:9092 --eps 50
 python -m detector.main --bootstrap-servers localhost:9092
 ```
 
+## Dashboards
+
+After `docker compose up`, open **Grafana** at [http://localhost:3001](http://localhost:3001) (anonymous access enabled, no login required). Navigate to **Dashboards → Detection & Response** folder.
+
+**Infrastructure Health** — "Is the pipeline healthy right now?"
+- Pipeline throughput, Kafka broker count, consumer lag (total + per-partition)
+- Kafka topic throughput, request latency percentiles (p50/p95/p99), token volume
+
+**Detection & Threat Analysis** — "Who's being bad, how, and is it getting worse?"
+- Alert rate by severity and rule, unique offenders, safety trigger patterns
+- Top users by alert count vs. event volume (cross-reference to distinguish abusers from power users)
+- Rate-limit/request ratio (leading indicator), input token distribution heatmap (abuse fingerprint)
+
+Each panel has a tooltip (hover the `i` icon) explaining what to look for.
+
 ## Verify
 
 - Container health: `docker compose -f docker/docker-compose.yml ps`
 - Kafka UI: [http://localhost:8080](http://localhost:8080)
+- Grafana: [http://localhost:3001](http://localhost:3001)
+- Prometheus: [http://localhost:9091](http://localhost:9091)
 - Generator logs: `docker compose -f docker/docker-compose.yml logs -f generator`
 - Detector logs / alerts: `docker compose -f docker/docker-compose.yml logs -f detector`
 
