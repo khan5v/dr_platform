@@ -54,9 +54,12 @@ dr_platform/
 │   ├── engine.py           # Rule evaluator (no Kafka dependency)
 │   ├── sliding_window.py   # Deque-based per-key windowing
 │   ├── rules/
-│   │   ├── rate_abuse.py
-│   │   ├── prompt_injection.py
-│   │   └── token_abuse.py
+│   │   ├── sigma/          # Sigma-standard YAML rule definitions
+│   │   │   ├── rate_abuse.yml
+│   │   │   ├── prompt_injection.yml
+│   │   │   └── token_abuse.yml
+│   │   ├── sigma_rule.py   # YAML → Rule interface adapter
+│   │   └── loader.py       # Rule discovery and validation
 │   └── tests/
 ├── triage/                 # LLM-powered alert classification
 │   ├── main.py             # Kafka consumer + Claude API / mock fallback
@@ -72,7 +75,8 @@ dr_platform/
 │       └── provisioning/   # Auto-wired datasource + dashboard config
 ├── docker/
 │   ├── Dockerfile
-│   └── docker-compose.yml  # Full stack: 15 containers
+│   ├── docker-compose.yml      # Mock mode (no API key needed)
+│   └── docker-compose.llm.yml  # Real Claude triage
 ├── secrets/                # API key mount point (gitignored)
 ├── setup.sh
 ├── pyproject.toml
@@ -81,39 +85,94 @@ dr_platform/
 
 ## Detection rules
 
-Rules are Python classes, not YAML. Each one defines a `match()` filter, a `trigger()` threshold, and an `evidence()` summary — tested with pytest, reviewed via PR, deployed as code.
+Rules follow the [Sigma](https://sigmahq.io/) open standard — the industry's vendor-agnostic format for security detection logic. Sigma does for log-based detection what YARA does for malware signatures and Snort does for network traffic: it gives teams a shared language. The [SigmaHQ](https://github.com/SigmaHQ/sigma) repository has 3,000+ community rules that can be converted to any SIEM query language (Splunk SPL, Elastic KQL, Microsoft Sentinel, etc.) via [pySigma](https://github.com/SigmaHQ/pySigma) backends.
+
+### Standard vs custom
+
+Standard Sigma is designed for **single-event matching** — "does this log line match these field conditions?" Our detection engine needs **windowed aggregation** — "did N matching events occur within T seconds?" Sigma has a `count()` aggregation condition, but it's limited and not uniformly supported across backends.
+
+The solution is a hybrid schema. Each rule file uses standard Sigma fields for everything they cover, plus a `custom:` extension block for our windowing and evaluation logic:
+
+| Section | Standard Sigma? | Purpose |
+|---------|:-:|---------|
+| `title`, `id`, `status`, `description`, `author`, `date` | Yes | Rule metadata. `id` is a UUID per spec. |
+| `tags`, `references`, `level` | Yes | ATT&CK mapping, severity, threat intel links. |
+| `logsource` | Yes | Log source classification (`category: api_telemetry`, `product: claude_api`). |
+| `detection.selection` + `condition` | Yes | Event-level field matching — drives `match()`. |
+| `custom.window_seconds`, `custom.group_key` | No | Sliding window duration and partition key. |
+| `custom.trigger` | No | Threshold logic — drives `trigger()`. Supports `count` and `compound` types. |
+| `custom.evidence` | No | Post-trigger statistics — drives `evidence()`. Feeds downstream triage. |
+
+Any Sigma-aware tool can parse the standard fields and ignore the `custom:` block. We don't use pySigma because it's a conversion tool (Sigma → SIEM query), not an evaluation engine — our lightweight parser evaluates rules against live events directly.
+
+### How rule evaluation works
+
+When an event arrives, the engine runs each rule through four steps:
+
+1. **Match** — evaluate `detection.selection` against the event. Standard Sigma semantics: scalar = exact match, list = OR, all fields must match (AND). If the event doesn't match, skip this rule.
+2. **Window** — route the event into a per-(rule, user) sliding window based on `custom.group_key` and `custom.window_seconds`.
+3. **Trigger** — evaluate `custom.trigger` against all events in the window. A `count` trigger checks `len(events) > threshold`. A `compound` trigger checks multiple metric conditions (averages, ratios) with a minimum event gate.
+4. **Evidence** — if triggered, compute `custom.evidence` statistics from the window contents (counts, averages, rates, unique values) and package them into the alert for downstream triage.
+
+### Active rules
 
 | Rule | Detects | Window | Threshold | Severity | ATT&CK |
 |------|---------|--------|-----------|----------|--------|
 | `rate_abuse` | Automated scraping, credential-stuffing proxies, runaway retry loops | 60s sliding | >60 combined API requests and rate-limit events | high | T1190 |
 | `prompt_injection` | Deliberate adversarial probing — iterating payloads to bypass safety | 5min sliding | >3 safety triggers | critical | T1059.006 |
-| `token_abuse` | Denial-of-wallet attacks — near-max context with zero caching | 15min sliding | avg >150K input tokens AND <5% cache rate (min 5 events) | high | — |
+| `token_abuse` | Denial-of-wallet attacks — near-max context with zero caching | 15min sliding | avg >150K input tokens AND <5% cache rate (min 5 events) | high | T1499 |
 
-Example rule (`rate_abuse.py`):
+Adding a new rule means dropping a `.yml` file in `detector/rules/sigma/` — no Python changes required.
 
-```python
-class RateAbuse(Rule):
-    id = "rate_abuse"
-    name = "API Rate Abuse"
-    severity = "high"
-    window_seconds = 60
+### Example rule (`rate_abuse.yml`)
 
-    def match(self, event):
-        return event["event_type"] in ("api_request", "rate_limit_event")
+```yaml
+title: API Rate Abuse
+id: 2815d9cd-be58-41aa-99f8-939b9024f629
+status: stable
+description: >
+  Sustained high request volume from a single user. Catches automated
+  scraping, credential-stuffing proxies, and runaway retry loops.
+author: Detection Engineering
+date: 2026-02-01
+references:
+  - https://attack.mitre.org/techniques/T1190/
+tags:
+  - attack.initial_access
+  - attack.t1190
+level: high
 
-    def trigger(self, events):
-        return len(events) > 60
+logsource:
+  category: api_telemetry
+  product: claude_api
 
-    def evidence(self, events):
-        api_reqs = sum(1 for e in events if e.get("event_type") == "api_request")
-        rate_limits = sum(1 for e in events if e.get("event_type") == "rate_limit_event")
-        timestamps = [e.get("timestamp", 0) for e in events]
-        span = max(timestamps) - min(timestamps) if len(timestamps) > 1 else 1
-        return {
-            "api_request_count": api_reqs,
-            "rate_limit_count": rate_limits,
-            "events_per_second": round(len(events) / max(span, 1), 2),
-        }
+detection:
+  selection:
+    event_type:
+      - api_request
+      - rate_limit_event
+  condition: selection
+
+# --- Extensions (not standard Sigma) ---
+custom:
+  rule_id: rate_abuse
+  window_seconds: 60
+  group_key: user_id
+  trigger:
+    type: count
+    threshold: 60
+    operator: gt
+  evidence:
+    - field: event_type
+      operation: count_where
+      where_value: api_request
+      output_key: api_request_count
+    - field: event_type
+      operation: count_where
+      where_value: rate_limit_event
+      output_key: rate_limit_count
+    - operation: events_per_second
+      output_key: events_per_second
 ```
 
 ## LLM triage
@@ -128,26 +187,25 @@ The triage service classifies each alert into a response priority, following the
 
 **Mock mode (default)** runs out of the box with no API key — deterministic classification that still produces realistic Grafana metrics.
 
-**Real Claude triage:**
+**Real Claude triage** uses `docker-compose.llm.yml`:
 
 1. Create or grab your API key from the [Anthropic Console](https://platform.claude.com/settings/keys), then write it to the secrets file (gitignored):
    ```bash
    echo "sk-ant-..." > secrets/anthropic_api_key
    ```
-2. Remove `--mock` from the triage command in `docker/docker-compose.yml`
-3. Restart:
+2. Start with the LLM compose file:
    ```bash
-   docker compose -f docker/docker-compose.yml up -d --build
+   docker compose -f docker/docker-compose.llm.yml up -d --build
    ```
 
 The model defaults to `claude-haiku-4-5-20251001`. To change it, set `ANTHROPIC_MODEL` before starting:
 
 ```bash
 export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
-docker compose -f docker/docker-compose.yml up -d --build
+docker compose -f docker/docker-compose.llm.yml up -d --build
 ```
 
-**Cost warning:** At 50 eps the generator produces a steady stream of alerts. With real triage (especially Opus), credits burn fast. Lower `--eps` to 5-10 in `docker-compose.yml` when using a real API key.
+**Cost warning:** At 50 eps the generator produces a steady stream of alerts. With real triage (especially Opus), credits burn fast. Lower `--eps` to 5-10 in `docker-compose.llm.yml` when budget is a concern.
 
 **Verifying the pipeline is talking to the model:** check your key in the [Anthropic Console](https://platform.claude.com/settings/keys). The "Last Used At" timestamp updating and the cost incrementing are the clearest indicators that real triage calls are hitting the API.
 
@@ -163,7 +221,7 @@ The API key is mounted via Docker Compose secrets at `/run/secrets/anthropic_api
 
 **`user_id` as the Kafka message key.** All events for a given user land on the same partition, which means the same detector replica. This guarantees per-user sliding windows are consistent without cross-replica coordination. It also means triage decisions for a user are ordered, and Grafana's "top users by alert count" panel works without a global aggregation layer. The tradeoff: this only works for per-user rules. Cross-user detection (e.g., multiple accounts in the same org coordinating an attack, or distributed abuse from distinct user IDs hitting the same endpoint pattern) would require a global aggregation layer.
 
-**Python classes over YAML for rules.** YAML detection rules inevitably grow into a bespoke DSL as rule complexity increases (conditional logic, field aggregations, cross-event correlation). Panther Labs went through exactly this migration — YAML to YAML+Python to all-Python. Python classes give full expressiveness, pytest testability, IDE support, and inheritance from the start. Each rule is its own file, so detection-as-code workflows (PR per rule, git blame, CI gating) work with zero custom tooling.
+**Sigma YAML for rules.** Rules follow the [Sigma](https://sigmahq.io/) open standard — the industry's vendor-agnostic format for security detection logic. Standard Sigma covers single-event matching; our rules need windowed aggregation, so we extend the schema with a `custom:` block for sliding windows, thresholds, and evidence computation while keeping all standard fields (title, id, logsource, detection, level, tags) spec-compliant. A lightweight custom parser evaluates rules against live events — we don't use pySigma because it's a conversion tool (Sigma → SIEM query), not an evaluation engine. Adding a new rule is a single YAML file drop with no Python changes.
 
 **Mock-first triage.** The system runs end-to-end with no API key. Mock mode uses deterministic severity-based classification that still produces realistic tier distributions for Grafana dashboards. This means anyone can clone, `docker compose up`, and see the full pipeline working — then swap in a real API key to see LLM triage without changing architecture.
 
@@ -173,8 +231,11 @@ The API key is mounted via Docker Compose secrets at `/run/secrets/anthropic_api
 # One-time setup (venv, system deps, Docker images)
 chmod +x setup.sh && ./setup.sh
 
-# Start the full stack (15 containers)
+# Mock mode — no API key, works out of the box
 docker compose -f docker/docker-compose.yml up -d --build
+
+# OR: Real LLM triage (requires API key in secrets/anthropic_api_key)
+docker compose -f docker/docker-compose.llm.yml up -d --build
 ```
 
 ## What happens
@@ -276,7 +337,10 @@ pytest detector/tests/ triage/tests/ -v
 ## Stop
 
 ```bash
+# Whichever compose file you started with:
 docker compose -f docker/docker-compose.yml down
+# or
+docker compose -f docker/docker-compose.llm.yml down
 ```
 
 Add `-v` to wipe Kafka/ZooKeeper data for a clean restart.

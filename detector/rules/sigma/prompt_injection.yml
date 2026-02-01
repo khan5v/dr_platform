@@ -1,0 +1,55 @@
+title: Prompt Injection Cluster
+id: 496abea6-f66a-4325-b029-0b5a0176e9e6
+status: stable
+description: >
+  Repeated safety triggers from a single user. A single safety trigger
+  can be accidental, but a cluster of 4+ in a 5-minute window indicates
+  deliberate probing — the attacker is iterating on payloads to find what
+  gets through the safety layer. Evidence includes the types of safety
+  triggers (prompt_injection, harmful_content, policy_violation) and the
+  block rate. A low block rate is more concerning — it means some payloads
+  are succeeding.
+author: Detection Engineering
+date: 2026-02-01
+references:
+  - https://attack.mitre.org/techniques/T1059/006/
+tags:
+  - attack.execution
+  - attack.t1059.006
+level: critical
+
+logsource:
+  category: api_telemetry
+  product: claude_api
+
+detection:
+  selection:
+    event_type: safety_trigger
+  condition: selection
+
+# --- Extensions (not standard Sigma) ---
+custom:
+  rule_id: prompt_injection
+  window_seconds: 300
+  group_key: user_id
+
+  trigger:
+    type: count
+    threshold: 3
+    operator: gt
+
+  evidence:
+    - field: trigger_type
+      operation: unique_list
+      output_key: trigger_types
+    - field: blocked
+      operation: count_where
+      where_value: true
+      output_key: blocked_count
+    - operation: count
+      output_key: total_triggers
+    - field: blocked
+      operation: ratio_where
+      where_value: true
+      output_key: block_rate
+      round: 2

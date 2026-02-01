@@ -14,38 +14,14 @@ References:
     for prompt injection probing
 """
 
+from detector.rules import ALL_RULES
+
 # ---------------------------------------------------------------------------
-# Rule context — gives the LLM analyst background on what each rule detects
-# and why it matters, so it can reason about true/false positives.
+# Rule context — built dynamically from Sigma YAML rule descriptions.
+# Gives the LLM analyst background on what each rule detects and why it
+# matters, so it can reason about true/false positives.
 # ---------------------------------------------------------------------------
-_RULE_CONTEXT = {
-    "rate_abuse": (
-        "This rule fires when a single user generates >60 API requests + "
-        "rate-limit hits within a 60-second sliding window.  Common causes: "
-        "automated scraping, credential-stuffing proxies, runaway retry loops, "
-        "or load-testing tools pointed at production.  Evidence includes the "
-        "request rate and rate-limit hit frequency.  A high rate_limit_count "
-        "relative to api_request_count suggests the user is intentionally "
-        "pushing past limits rather than accidentally bursting."
-    ),
-    "prompt_injection": (
-        "This rule fires when a user triggers 3+ safety violations in a "
-        "5-minute window.  A single safety trigger can be accidental, but a "
-        "cluster indicates deliberate probing — the attacker is iterating on "
-        "payloads to find what gets through the safety layer.  Evidence "
-        "includes the types of safety triggers (prompt_injection, "
-        "harmful_content, policy_violation) and the block rate.  A low block "
-        "rate is more concerning — it means some payloads are succeeding."
-    ),
-    "token_abuse": (
-        "This rule fires when a user's average input tokens exceed 150K with "
-        "<5% cache utilization over a 15-minute window (minimum 5 requests).  "
-        "Legitimate high-token users almost always leverage prompt caching.  "
-        "Near-max context with zero caching suggests denial-of-wallet attacks "
-        "(maximizing compute cost) or data exfiltration through the context "
-        "window.  Evidence includes token statistics and model distribution."
-    ),
-}
+_RULE_CONTEXT = {r.id: r.description for r in ALL_RULES}
 
 
 # ---------------------------------------------------------------------------

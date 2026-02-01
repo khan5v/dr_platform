@@ -1,12 +1,18 @@
 """Tests for DetectionEngine — end-to-end wiring, dedup, malformed data."""
 
 import time
+from pathlib import Path
+
 import pytest
 
 from detector.engine import DetectionEngine
-from detector.rules.rate_abuse import RateAbuse
-from detector.rules.prompt_injection import PromptInjection
-from detector.rules.token_abuse import TokenAbuse
+from detector.rules.loader import load_rule
+
+_SIGMA_DIR = Path(__file__).resolve().parent.parent / "rules" / "sigma"
+
+RateAbuse = lambda: load_rule(_SIGMA_DIR / "rate_abuse.yml")
+PromptInjection = lambda: load_rule(_SIGMA_DIR / "prompt_injection.yml")
+TokenAbuse = lambda: load_rule(_SIGMA_DIR / "token_abuse.yml")
 
 
 def _event(event_type="api_request", user_id="user_001", org_id="org_001",
@@ -139,9 +145,10 @@ class TestMalformedEvents:
     def setup_method(self):
         self.engine = DetectionEngine()
 
-    def test_missing_event_type_raises(self):
-        with pytest.raises(KeyError):
-            self.engine.evaluate({"timestamp": time.time(), "user_id": "u"})
+    def test_missing_event_type_matches_no_rules(self):
+        """Events without event_type should match no rules (not crash)."""
+        alerts = self.engine.evaluate({"timestamp": time.time(), "user_id": "u"})
+        assert alerts == []
 
     def test_missing_timestamp_uses_current_time(self):
         """Events without timestamp should still be processed (engine falls back to now)."""

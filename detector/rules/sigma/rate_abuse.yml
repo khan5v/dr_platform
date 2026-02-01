@@ -1,0 +1,52 @@
+title: API Rate Abuse
+id: 2815d9cd-be58-41aa-99f8-939b9024f629
+status: stable
+description: >
+  Sustained high request volume from a single user. Catches automated
+  scraping, credential-stuffing proxies, and runaway retry loops. Fires
+  when a user generates >60 API requests + rate-limit hits in a 1-minute
+  sliding window. A high rate_limit_count relative to api_request_count
+  suggests the user is intentionally pushing past limits rather than
+  accidentally bursting.
+author: Detection Engineering
+date: 2026-02-01
+references:
+  - https://attack.mitre.org/techniques/T1190/
+tags:
+  - attack.initial_access
+  - attack.t1190
+level: high
+
+logsource:
+  category: api_telemetry
+  product: claude_api
+
+detection:
+  selection:
+    event_type:
+      - api_request
+      - rate_limit_event
+  condition: selection
+
+# --- Extensions (not standard Sigma) ---
+custom:
+  rule_id: rate_abuse
+  window_seconds: 60
+  group_key: user_id
+
+  trigger:
+    type: count
+    threshold: 60
+    operator: gt
+
+  evidence:
+    - field: event_type
+      operation: count_where
+      where_value: api_request
+      output_key: api_request_count
+    - field: event_type
+      operation: count_where
+      where_value: rate_limit_event
+      output_key: rate_limit_count
+    - operation: events_per_second
+      output_key: events_per_second

@@ -1,7 +1,13 @@
-# Mock mode — runs the full pipeline with no API key required.
-# Triage uses deterministic severity-based classification.
+# Real LLM mode — triage alerts with Claude.
+# Requires an API key: echo "sk-ant-..." > secrets/anthropic_api_key
 #
-#   docker compose -f docker/docker-compose.yml up -d --build
+#   docker compose -f docker/docker-compose.llm.yml up -d --build
+#
+# Cost warning: at 50 eps the generator produces a steady stream of alerts.
+# With real triage (especially Opus), credits burn fast. Lower --eps to
+# 5-10 in the generator command below when budget is a concern.
+#
+# To change model: export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
 
 services:
   zookeeper:
@@ -127,7 +133,7 @@ services:
       replicas: 3
 
   # ---------------------------------------------------------------------------
-  # Triage — deterministic mock (no API key needed)
+  # Triage — real Claude LLM classification
   # ---------------------------------------------------------------------------
 
   triage:
@@ -139,7 +145,9 @@ services:
       --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
       --input-topic alerts
       --output-topic triage-results
-      --mock
+      --anthropic-model ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+    secrets:
+      - anthropic_api_key
     depends_on:
       kafka-1:
         condition: service_healthy
@@ -210,3 +218,7 @@ services:
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+
+secrets:
+  anthropic_api_key:
+    file: ../secrets/anthropic_api_key

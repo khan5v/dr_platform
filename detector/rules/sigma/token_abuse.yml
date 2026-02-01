@@ -1,0 +1,66 @@
+title: Token Stuffing
+id: f7f237ba-52ec-4e75-bd4d-e8cca7f7cd2e
+status: stable
+description: >
+  Near-max context with no caching. Legitimate high-token users almost
+  always leverage prompt caching. A user consistently sending >150K input
+  tokens with <5% cache hit rate is likely stuffing context to maximize
+  compute cost (denial-of-wallet) or exfiltrating training-style data
+  through the context window. Evidence includes token statistics and model
+  distribution.
+author: Detection Engineering
+date: 2026-02-01
+references:
+  - https://attack.mitre.org/techniques/T1499/
+tags:
+  - attack.impact
+  - attack.t1499
+level: high
+
+logsource:
+  category: api_telemetry
+  product: claude_api
+
+detection:
+  selection:
+    event_type: api_request
+  condition: selection
+
+# --- Extensions (not standard Sigma) ---
+custom:
+  rule_id: token_abuse
+  window_seconds: 900
+  group_key: user_id
+
+  trigger:
+    type: compound
+    min_events: 5
+    conditions:
+      - metric: avg
+        field: input_tokens
+        threshold: 150000
+        operator: gt
+      - metric: ratio_where
+        field: cache_read_input_tokens
+        where: gt0
+        threshold: 0.05
+        operator: lt
+
+  evidence:
+    - field: input_tokens
+      operation: avg
+      output_key: avg_input_tokens
+      round: 0
+    - field: input_tokens
+      operation: max
+      output_key: max_input_tokens
+    - field: cache_read_input_tokens
+      operation: ratio_where
+      where: gt0
+      output_key: cache_hit_rate
+      round: 3
+    - operation: count
+      output_key: sample_size
+    - field: model
+      operation: unique_list
+      output_key: models_used

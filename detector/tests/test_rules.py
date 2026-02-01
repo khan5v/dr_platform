@@ -1,10 +1,12 @@
 """Tests for detection rules — match filtering, trigger boundaries, malformed data."""
 
+from pathlib import Path
+
 import pytest
 
-from detector.rules.rate_abuse import RateAbuse
-from detector.rules.prompt_injection import PromptInjection
-from detector.rules.token_abuse import TokenAbuse
+from detector.rules.loader import load_rule
+
+_SIGMA_DIR = Path(__file__).resolve().parent.parent / "rules" / "sigma"
 
 
 # ---------------------------------------------------------------------------
@@ -13,7 +15,7 @@ from detector.rules.token_abuse import TokenAbuse
 
 class TestRateAbuseMatch:
     def setup_method(self):
-        self.rule = RateAbuse()
+        self.rule = load_rule(_SIGMA_DIR / "rate_abuse.yml")
 
     def test_matches_api_request(self):
         assert self.rule.match({"event_type": "api_request", "user_id": "u"})
@@ -30,7 +32,7 @@ class TestRateAbuseMatch:
 
 class TestRateAbuseTrigger:
     def setup_method(self):
-        self.rule = RateAbuse()
+        self.rule = load_rule(_SIGMA_DIR / "rate_abuse.yml")
 
     def test_60_events_does_not_fire(self):
         """Boundary: exactly 60 is within normal range."""
@@ -52,7 +54,7 @@ class TestRateAbuseTrigger:
 
 class TestPromptInjectionMatch:
     def setup_method(self):
-        self.rule = PromptInjection()
+        self.rule = load_rule(_SIGMA_DIR / "prompt_injection.yml")
 
     def test_matches_safety_trigger(self):
         assert self.rule.match({"event_type": "safety_trigger", "user_id": "u"})
@@ -66,7 +68,7 @@ class TestPromptInjectionMatch:
 
 class TestPromptInjectionTrigger:
     def setup_method(self):
-        self.rule = PromptInjection()
+        self.rule = load_rule(_SIGMA_DIR / "prompt_injection.yml")
 
     def test_3_events_does_not_fire(self):
         """Boundary: exactly 3 is not suspicious enough."""
@@ -85,7 +87,7 @@ class TestPromptInjectionTrigger:
 
 class TestTokenAbuseMatch:
     def setup_method(self):
-        self.rule = TokenAbuse()
+        self.rule = load_rule(_SIGMA_DIR / "token_abuse.yml")
 
     def test_matches_api_request(self):
         assert self.rule.match({"event_type": "api_request", "user_id": "u"})
@@ -96,7 +98,7 @@ class TestTokenAbuseMatch:
 
 class TestTokenAbuseTrigger:
     def setup_method(self):
-        self.rule = TokenAbuse()
+        self.rule = load_rule(_SIGMA_DIR / "token_abuse.yml")
 
     def _events(self, n, input_tokens=160_000, cache_read=0):
         return [
@@ -159,10 +161,12 @@ class TestTokenAbuseTrigger:
 
 class TestGroupKey:
     def test_default_groups_by_user_id(self):
-        for rule in [RateAbuse(), PromptInjection(), TokenAbuse()]:
+        for name in ("rate_abuse.yml", "prompt_injection.yml", "token_abuse.yml"):
+            rule = load_rule(_SIGMA_DIR / name)
             assert rule.group_key({"user_id": "user_007"}) == "user_007"
 
     def test_missing_user_id_raises(self):
         """Malformed event without user_id should raise, not silently pass."""
+        rule = load_rule(_SIGMA_DIR / "rate_abuse.yml")
         with pytest.raises(KeyError):
-            RateAbuse().group_key({"org_id": "org_001"})
+            rule.group_key({"org_id": "org_001"})
