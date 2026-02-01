@@ -85,7 +85,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     command: >
-      python producer.py
+      python -m generator.main
       --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
       --eps 50
     depends_on:
@@ -96,13 +96,15 @@ services:
       kafka-3:
         condition: service_healthy
 
-  consumer:
+  detector:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     command: >
-      python consumer.py
+      python -m detector.main
       --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
+      --input-topic raw-api-events
+      --output-topic alerts
     depends_on:
       kafka-1:
         condition: service_healthy

@@ -5,9 +5,9 @@ profiles. Event schemas are modeled after actual Claude Messages API fields
 (request_id, model, input/output tokens, cache tokens, stop_reason, etc.).
 
 Usage:
-    python producer.py
-    python producer.py --normal 20 --rate-abusers 2 --injection-abusers 2 --token-abusers 1
-    python producer.py --eps 100 --topic raw-api-events
+    python -m generator.main
+    python -m generator.main --normal 20 --rate-abusers 2 --injection-abusers 2 --token-abusers 1
+    python -m generator.main --eps 100 --topic raw-api-events
 """
 
 import argparse
