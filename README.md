@@ -288,6 +288,8 @@ Open Grafana at [http://localhost:3001](http://localhost:3001) (no login require
 
 ### Detection & Threat Analysis — "Who's being bad?"
 
+![Detection & Threat Analysis dashboard](docs/infra_health.png)
+
 | Panel | What to look for |
 |-------|-----------------|
 | Alert Rate / Critical / High / Unique Offenders | Top-line stats. Baseline ~2-5 alerts/min. |
@@ -299,6 +301,8 @@ Open Grafana at [http://localhost:3001](http://localhost:3001) (no login require
 | Input Token Distribution | Heatmap. Normal users cluster at 100-8K tokens. Token abusers form a distinct band at 150K+. |
 
 ### Triage & Response — "Is the SOC automation working?"
+
+![Triage & Response dashboard](docs/llm_triage_dashboard.png)
 
 | Panel | What to look for |
 |-------|-----------------|
