@@ -88,6 +88,10 @@ services:
       python -m generator.main
       --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
       --eps 50
+      --normal 200
+      --rate-abusers 5
+      --injection-abusers 4
+      --token-abusers 3
     depends_on:
       kafka-1:
         condition: service_healthy
