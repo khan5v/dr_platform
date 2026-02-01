@@ -94,7 +94,6 @@ echo "=== Pulling Docker images ==="
 
 docker pull confluentinc/cp-kafka:7.6.0
 docker pull confluentinc/cp-zookeeper:7.6.0
-docker pull confluentinc/cp-schema-registry:7.6.0
 docker pull provectuslabs/kafka-ui:latest
 
 # --- kcat (optional) ---

@@ -2,7 +2,9 @@
 
 Real-time Claude API abuse detection platform — streaming telemetry through Kafka into a rule-based detection engine.
 
-## System Diagram
+Anthropic's RSA 2025 talk on using LLMs to power SOC operations got me thinking about what that pipeline actually looks like end-to-end. I like building prototypes in my spare time to pressure-test ideas, so I put this together: a small but complete detection-and-triage system that streams simulated Claude API telemetry through Kafka, runs sliding-window detection rules, and lets an LLM classify the alerts into response tiers. It's a weekend project, not production software, but it covers the full loop from event generation to analyst-ready triage output.
+
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -10,10 +12,12 @@ flowchart LR
         G["Generator<br>50 eps"] -->|JSON events<br>keyed by user_id| K["Kafka Cluster<br>3 brokers"]
         K -->|raw-api-events<br>3 partitions| D["Detector ×3<br>sliding-window rules"]
         D -->|alerts| K
+        K -->|alerts| T["Triage<br>LLM classification"]
+        T -->|triage-results| K
     end
 
     subgraph Monitoring
-        K -->|raw-api-events<br>+ alerts| E["Exporter<br>Kafka → Prometheus metrics"]
+        K -->|raw-api-events<br>+ alerts<br>+ triage-results| E["Exporter<br>Kafka → Prometheus metrics"]
         KE["Kafka Exporter<br>broker & lag metrics"] ---|scrape :9308| P["Prometheus<br>TSDB"]
         E ---|scrape :9090| P
         P ---|PromQL queries| GF["Grafana<br>:3001"]
@@ -24,110 +28,34 @@ flowchart LR
     style G fill:#4a9,stroke:#333,color:#fff
     style D fill:#e74,stroke:#333,color:#fff
     style K fill:#36a,stroke:#333,color:#fff
+    style T fill:#c4a,stroke:#333,color:#fff
     style E fill:#a6c,stroke:#333,color:#fff
     style P fill:#f90,stroke:#333,color:#fff
     style GF fill:#5b5,stroke:#333,color:#fff
     style KE fill:#a6c,stroke:#333,color:#fff
 ```
 
-## Data flow
-
 Events are keyed by `user_id`, so a user's events always land on the same Kafka partition — keeping per-user sliding windows consistent across the 3 detector replicas.
 
-## Prerequisites
-
-- Python 3.12+
-- Docker Desktop (with `docker compose` plugin)
-- macOS: Homebrew (for `librdkafka`)
-- Linux: `apt-get` or `dnf` (for `librdkafka-dev`)
-
-## Setup
+## Quick start
 
 ```bash
+# One-time setup (venv, system deps, Docker images)
 chmod +x setup.sh && ./setup.sh
-```
 
-The setup script will:
-1. Create a `.venv` virtual environment (if it doesn't exist)
-2. Install system dependencies (`librdkafka` via Homebrew/apt/dnf)
-3. Install pinned Python packages from `requirements-dev.txt`
-4. Pull all required Docker images
-5. Install `kcat` (optional Kafka CLI tool)
-
-## Dependency management
-
-| File | Purpose |
-|---|---|
-| `pyproject.toml` | Canonical dependency spec with version ranges |
-| `requirements.txt` | Pinned runtime deps (used by Dockerfile) |
-| `requirements-dev.txt` | Runtime + test deps (used by setup.sh) |
-
-To add a new dependency: add it to `pyproject.toml`, install it, then regenerate the pinned files with `pip freeze`.
-
-## Run (Docker)
-
-```bash
+# Start the full stack (15 containers)
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-Starts the full stack (14 containers): ZooKeeper, 3 Kafka brokers, Kafka UI, generator, 3 detector replicas, metrics exporter, kafka-exporter, Prometheus, and Grafana.
+## What happens
 
-## Run tests
+The generator produces ~50 events/sec with a mix of normal users and three attacker profiles. The detector picks these up and fires alerts as abuse thresholds are crossed. Rate abuse fires first (~60s), then prompt injection (~minutes), then token abuse (~15min).
 
-```bash
-source .venv/bin/activate
-pytest detector/tests/ -v
-```
-
-## Run locally (without Docker)
-
-Start Kafka however you like, then in separate terminals:
-
-```bash
-source .venv/bin/activate
-
-# Terminal 1: generator
-python -m generator.main --bootstrap-servers localhost:9092 --eps 50
-
-# Terminal 2: detector
-python -m detector.main --bootstrap-servers localhost:9092
-```
-
-## Dashboards
-
-After `docker compose up`, open **Grafana** at [http://localhost:3001](http://localhost:3001) (anonymous access enabled, no login required). Navigate to **Dashboards → Detection & Response** folder.
-
-**Infrastructure Health** — "Is the pipeline healthy right now?"
-- Pipeline throughput, Kafka broker count, consumer lag (total + per-partition)
-- Kafka topic throughput, request latency percentiles (p50/p95/p99), token volume
-
-**Detection & Threat Analysis** — "Who's being bad, how, and is it getting worse?"
-- Alert rate by severity and rule, unique offenders, safety trigger patterns
-- Top users by alert count vs. event volume (cross-reference to distinguish abusers from power users)
-- Rate-limit/request ratio (leading indicator), input token distribution heatmap (abuse fingerprint)
-
-Each panel has a tooltip (hover the `i` icon) explaining what to look for.
-
-## Verify
-
-- Container health: `docker compose -f docker/docker-compose.yml ps`
-- Kafka UI: [http://localhost:8080](http://localhost:8080)
-- Grafana: [http://localhost:3001](http://localhost:3001)
-- Prometheus: [http://localhost:9091](http://localhost:9091)
-- Generator logs: `docker compose -f docker/docker-compose.yml logs -f generator`
-- Detector logs / alerts: `docker compose -f docker/docker-compose.yml logs -f detector`
-
-## See it in action
-
-After `docker compose up`, the generator starts producing events at 50/sec with a mix of normal users and three attacker profiles baked in. The detector picks these up and fires alerts as abuse thresholds are crossed.
-
-**1. Watch alerts fire in real time:**
+**Watch alerts fire:**
 
 ```bash
 docker compose -f docker/docker-compose.yml logs -f detector 2>&1 | grep ALERT
 ```
-
-You should see output like:
 
 ```
 ALERT  rule=rate_abuse           severity=high     user=user_0009  events=62
@@ -135,23 +63,102 @@ ALERT  rule=prompt_injection     severity=critical  user=user_0010  events=5
 ALERT  rule=token_abuse          severity=high     user=user_0011  events=6
 ```
 
-Rate abuse fires first (~60s), then prompt injection (~minutes), then token abuse (~15min).
-
-**2. Inspect topics in Kafka UI:**
-
-Open [http://localhost:8080](http://localhost:8080) and check:
-- `raw-api-events` — events flowing in across 3 partitions
-- `alerts` — alert payloads produced by the detector, keyed by `user_id`
-
-**3. Read raw alert payloads from the CLI:**
+**Watch triage classify them:**
 
 ```bash
-docker compose -f docker/docker-compose.yml exec kafka-1 \
-  kafka-console-consumer --bootstrap-server localhost:9092 \
-  --topic alerts --from-beginning
+docker compose -f docker/docker-compose.yml logs -f triage
 ```
 
-Each alert is a JSON object with `rule_id`, `severity`, `user_id`, `event_count`, and `window_seconds`.
+```
+TRIAGE [GOLD  ]  rule=prompt_injection    user=user_0010   verdict=true_positive       confidence=high     risk=9
+TRIAGE [GOLD  ]  rule=rate_abuse          user=user_0009   verdict=true_positive       confidence=medium   risk=7
+TRIAGE [SILVER]  rule=token_abuse         user=user_0011   verdict=needs_investigation confidence=medium   risk=5
+```
+
+**Inspect raw Kafka topics:** open Kafka UI at [http://localhost:8080](http://localhost:8080) — check `raw-api-events`, `alerts`, and `triage-results`.
+
+## Dashboards
+
+Open Grafana at [http://localhost:3001](http://localhost:3001) (no login required) → **Dashboards → Detection & Response**.
+
+### Infrastructure Health — "Is the pipeline working?"
+
+| Panel | What to look for |
+|-------|-----------------|
+| Pipeline Throughput | Should hover around ~50 eps. Drops to 0 = pipeline is broken. |
+| Kafka Brokers | Must be 3. Fewer = degraded replication. |
+| Detector / Exporter Lag | Unprocessed messages. Should stay <100. Rising = can't keep up. |
+| Kafka Topic Throughput | msgs/sec by topic. `alerts` should be <<1% of `raw-api-events`. |
+| Consumer Lag by Partition | Even distribution = healthy. One partition lagging = that replica is sick. |
+| Simulated API Response Latency | p50/p95/p99 of simulated Claude API latency from the generator (not internal pipeline latency). p99 spiking while p50 stays flat = large-context outliers. |
+| Data Volume (tokens/sec) | Input spiking with near-zero cache = token stuffing. |
+
+### Detection & Threat Analysis — "Who's being bad?"
+
+| Panel | What to look for |
+|-------|-----------------|
+| Alert Rate / Critical / High / Unique Offenders | Top-line stats. Baseline ~2-5 alerts/min. |
+| Alert Rate by Rule | Which rules are firing. Same user triggering multiple rules = coordinated multi-vector abuse. |
+| Safety Trigger Rate by Type | Upstream signal. Rising triggers without alerts = thresholds too high. |
+| Top Users by Alert Count | The usual suspects. Cross-reference with event volume to distinguish abusers from power users. |
+| Top Users by Event Volume | High volume + no alerts = normal. High volume + alerts = confirmed abuse. |
+| Rate Limit / Request Ratio | Leading indicator. Normal <1%, active abuse >5%. |
+| Input Token Distribution | Heatmap. Normal users cluster at 100-8K tokens. Token abusers form a distinct band at 150K+. |
+
+### Triage & Response — "Is the SOC automation working?"
+
+| Panel | What to look for |
+|-------|-----------------|
+| Gold Escalations (5min) | Immediate-action alerts. The metric that matters most in a real SOC. |
+| Triage Rate | Should match alert rate. A gap = triage is falling behind. |
+| True Positive Rate | >70% = rules are good. <30% = too many false positives, rules need tuning. |
+| Median Risk Score | Trending up = threat severity increasing. |
+| Tier Distribution | Healthy: ~60% Bronze / 30% Silver / 10% Gold. |
+| Triage Rate by Tier | Gold spikes = incidents. Sustained Silver = emerging threats. Bronze = noise floor. |
+
+Every panel has an `i` tooltip with more detail.
+
+## LLM Triage
+
+The triage service classifies alerts into SOC response tiers:
+
+| Tier | Action | Example |
+|------|--------|---------|
+| **Gold** | Page on-call, block user, preserve evidence | Prompt injection cluster |
+| **Silver** | Investigation queue, assign to analyst | Rate abuse from unknown user |
+| **Bronze** | Auto-acknowledge, log only | Borderline threshold hit |
+
+**Mock mode (default)** runs out of the box with no API key — deterministic classification that still produces realistic Grafana metrics.
+
+**Real Claude triage:**
+
+1. Write your API key to the secrets file (gitignored):
+   ```bash
+   echo "sk-ant-..." > secrets/anthropic_api_key
+   ```
+2. Remove `--mock` from the triage command in `docker/docker-compose.yml`
+3. Restart:
+   ```bash
+   docker compose -f docker/docker-compose.yml up -d --build
+   ```
+
+The model defaults to `claude-haiku-35-20241022`. To change it, set `ANTHROPIC_MODEL` before starting:
+
+```bash
+export ANTHROPIC_MODEL=claude-sonnet-4-20250514
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
+**Cost warning:** At 50 eps the generator produces a steady stream of alerts. With real triage (especially Opus), credits burn fast. Lower `--eps` to 5-10 in `docker-compose.yml` when using a real API key.
+
+The API key is mounted via Docker Compose secrets at `/run/secrets/anthropic_api_key` — it never appears in `docker inspect`, env dumps, or process listings.
+
+## Tests
+
+```bash
+source .venv/bin/activate
+pytest detector/tests/ triage/tests/ -v
+```
 
 ## Stop
 
@@ -159,4 +166,4 @@ Each alert is a JSON object with `rule_id`, `severity`, `user_id`, `event_count`
 docker compose -f docker/docker-compose.yml down
 ```
 
-Add `-v` to wipe all Kafka/ZooKeeper data for a clean restart.
+Add `-v` to wipe Kafka/ZooKeeper data for a clean restart.

@@ -92,8 +92,8 @@ def main():
             for alert in alerts:
                 producer.produce(
                     args.output_topic,
-                    key=alert["user_id"],
-                    value=json.dumps(alert).encode("utf-8"),
+                    key=alert["user_id"].encode(),
+                    value=json.dumps(alert).encode(),
                 )
                 alerts_produced += 1
                 print(f"ALERT  rule={alert['rule_id']:<20s} "

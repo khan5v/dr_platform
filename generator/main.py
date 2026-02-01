@@ -239,7 +239,7 @@ def main():
         producer.produce(
             topic=args.topic,
             key=event["user_id"].encode(),
-            value=json.dumps(event),
+            value=json.dumps(event).encode(),
         )
         producer.poll(0)
 

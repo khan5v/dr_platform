@@ -19,3 +19,13 @@ class PromptInjection(Rule):
 
     def trigger(self, events):
         return len(events) > 3
+
+    def evidence(self, events):
+        trigger_types = list({e.get("trigger_type", "unknown") for e in events})
+        blocked = sum(1 for e in events if e.get("blocked"))
+        return {
+            "trigger_types": trigger_types,
+            "blocked_count": blocked,
+            "total_triggers": len(events),
+            "block_rate": round(blocked / max(len(events), 1), 2),
+        }

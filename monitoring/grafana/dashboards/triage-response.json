@@ -1,0 +1,162 @@
+{
+  "title": "Triage & Response",
+  "uid": "dr-triage-response",
+  "editable": true,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Gold Escalations (5min)",
+      "description": "Gold-tier alerts require immediate action: page on-call, block user, preserve evidence. These are high-confidence true positives from critical rules (prompt injection clusters, coordinated abuse). In a real SOC (NIST SP 800-61), Gold alerts trigger the full incident response lifecycle.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(increase(dr_triage_gold_total[5m])) or vector(0)", "legendFormat": "gold" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "#FF9830", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Triage Rate (per min)",
+      "description": "Total triage decisions per minute across all tiers. Should roughly match the alert rate from the detection dashboard. A sustained gap means the triage service is falling behind (check consumer lag).",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(dr_triage_total[5m])) * 60", "legendFormat": "decisions/min" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 30 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "True Positive Rate",
+      "description": "Fraction of triaged alerts classified as true positives. High TP rate (>70%) validates detection rule quality. Low rate (<30%) signals rule tuning is needed — too many false positives waste analyst time (NIST SP 800-61 \u00a73.2.6).",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{
+        "expr": "sum(rate(dr_triage_total{verdict=\"true_positive\"}[5m])) / (sum(rate(dr_triage_total[5m])) > 0)",
+        "legendFormat": "TP rate"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "green", "value": 0.7 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Median Risk Score",
+      "description": "Median LLM-assigned risk score (1-10). Trending upward = threat severity increasing. Trending downward = detection rules catching lower-risk patterns (possible over-alerting).",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "histogram_quantile(0.5, rate(dr_triage_risk_score_bucket[5m]))", "legendFormat": "median risk" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "min": 0,
+          "max": 10,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 4 },
+              { "color": "orange", "value": 6 },
+              { "color": "red", "value": 8 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+
+    {
+      "id": 5,
+      "type": "piechart",
+      "title": "Triage Tier Distribution",
+      "description": "SOC automation pyramid breakdown. Healthy ratio: ~60% Bronze (auto-ack), ~30% Silver (investigation), ~10% Gold (escalation). If Gold >20%, either the threat level is elevated or detection thresholds need raising.",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (tier) (increase(dr_triage_total[5m]))", "legendFormat": "{{ tier }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "gold" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FFD700", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "silver" }, "properties": [{ "id": "color", "value": { "fixedColor": "#C0C0C0", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "bronze" }, "properties": [{ "id": "color", "value": { "fixedColor": "#CD7F32", "mode": "fixed" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Triage Rate by Tier",
+      "description": "Triage throughput broken down by SOC tier over time. Gold spikes indicate active incidents. Sustained Silver elevation suggests emerging threats. Bronze is the baseline noise floor — what the LLM auto-acknowledges so analysts don't have to.",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (tier) (rate(dr_triage_total[1m]))", "legendFormat": "{{ tier }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 80, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "gold" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FFD700", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "silver" }, "properties": [{ "id": "color", "value": { "fixedColor": "#C0C0C0", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "bronze" }, "properties": [{ "id": "color", "value": { "fixedColor": "#CD7F32", "mode": "fixed" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum", "max"] } }
+    }
+  ]
+}

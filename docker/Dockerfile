@@ -1,4 +1,4 @@
-# Shared image for all Python services (generator, detector).
+# Shared image for all Python services (generator, detector, exporter, triage).
 # Each service uses the same image; docker-compose `command` selects the module.
 
 FROM python:3.12-slim AS runtime
@@ -16,3 +16,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY generator/ generator/
 COPY detector/ detector/
 COPY exporter/ exporter/
+COPY triage/ triage/

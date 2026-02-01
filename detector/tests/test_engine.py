@@ -198,3 +198,47 @@ class TestAlertSchema:
         assert "window_seconds" in alert
         assert "event_count" in alert
         assert isinstance(alert["event_count"], int)
+        assert "evidence" in alert
+        assert isinstance(alert["evidence"], dict)
+
+    def test_rate_abuse_evidence(self):
+        engine = DetectionEngine(rules=[RateAbuse()])
+        alerts = []
+        for i in range(62):
+            alerts.extend(engine.evaluate(
+                _event(ts_offset=-30 + i * 0.4, user_id="u")
+            ))
+        assert len(alerts) == 1
+        ev = alerts[0]["evidence"]
+        assert "api_request_count" in ev
+        assert "rate_limit_count" in ev
+        assert "events_per_second" in ev
+
+    def test_prompt_injection_evidence(self):
+        engine = DetectionEngine(rules=[PromptInjection()])
+        alerts = []
+        for i in range(5):
+            alerts.extend(engine.evaluate(
+                _event("safety_trigger", ts_offset=-10 + i, user_id="u",
+                       trigger_type="prompt_injection", blocked=True)
+            ))
+        assert len(alerts) == 1
+        ev = alerts[0]["evidence"]
+        assert "trigger_types" in ev
+        assert "blocked_count" in ev
+        assert ev["blocked_count"] == 4  # alert fires at >3, window has 4 events
+
+    def test_token_abuse_evidence(self):
+        engine = DetectionEngine(rules=[TokenAbuse()])
+        alerts = []
+        for i in range(6):
+            alerts.extend(engine.evaluate(
+                _event(ts_offset=-300 + i * 50, user_id="u",
+                       input_tokens=160_000, cache_read_input_tokens=0,
+                       model="claude-sonnet-4-20250514")
+            ))
+        assert len(alerts) == 1
+        ev = alerts[0]["evidence"]
+        assert ev["avg_input_tokens"] == 160_000
+        assert ev["cache_hit_rate"] == 0.0
+        assert "claude-sonnet-4-20250514" in ev["models_used"]

@@ -56,7 +56,8 @@ class DetectionEngine:
             window.add(ts, event)
 
             # 4-5. Evaluate and alert
-            if rule.trigger(window.events(now)):
+            current_events = window.events(now)
+            if rule.trigger(current_events):
                 alerts.append({
                     "rule_id": rule.id,
                     "rule_name": rule.name,
@@ -66,6 +67,10 @@ class DetectionEngine:
                     "timestamp": now,
                     "window_seconds": rule.window_seconds,
                     "event_count": len(window),
+                    # Evidence summary for downstream triage — gives the LLM
+                    # (or human analyst) rule-specific statistics without
+                    # needing to replay the raw event window.
+                    "evidence": rule.evidence(current_events),
                 })
                 window.clear()  # simple dedup: must re-accumulate to fire again
 

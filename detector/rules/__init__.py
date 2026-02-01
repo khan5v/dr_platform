@@ -31,6 +31,21 @@ class Rule:
         """Given all matching events in the current window, should we alert?"""
         raise NotImplementedError
 
+    # Evidence ≠ enrichment. Evidence is derived from the detection window
+    # itself (event counts, rates, field aggregates). Enrichment adds
+    # external context (threat intel, user history, asset inventory) and
+    # happens downstream in the triage service.
+    def evidence(self, events: list[dict]) -> dict:
+        """Summarize evidence from window events for downstream triage.
+
+        Each rule overrides this to compute rule-specific statistics that
+        give an LLM (or human analyst) the context needed to classify the
+        alert — mirroring the evidence-packaging step in a real SOC alert
+        pipeline (NIST SP 800-61 §3.2: "capture sufficient detail for the
+        triage analyst to assess without re-querying raw telemetry").
+        """
+        return {}
+
     def group_key(self, event: dict) -> str:
         """Windowing key. Default: per-user. Override for per-org, per-IP, etc."""
         return event["user_id"]

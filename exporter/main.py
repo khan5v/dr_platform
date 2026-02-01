@@ -1,7 +1,7 @@
 """Prometheus metrics exporter — consumes Kafka events and exposes metrics.
 
 Subscribes to both raw-api-events and alerts topics, updating Prometheus
-counters, histograms, and gauges in real-time.  Grafana reads from Prometheus
+counters, histograms, and gauges in real-time. Grafana reads from Prometheus
 to render the security operations dashboard.
 
 Usage:
@@ -22,7 +22,7 @@ from prometheus_client import Counter, Histogram, Gauge, start_http_server
 # Event metrics
 # ---------------------------------------------------------------------------
 # Each Counter/Histogram/Gauge below auto-registers itself in a global
-# REGISTRY on construction.  No manual wiring needed — start_http_server()
+# REGISTRY on construction. No manual wiring needed — start_http_server()
 # iterates that registry on every GET /metrics and serialises all values
 # into the Prometheus text exposition format.
 events_total = Counter(
@@ -109,6 +109,25 @@ export_errors_total = Counter(
     "JSON parse or Kafka consumer errors in the exporter",
 )
 
+# ---------------------------------------------------------------------------
+# Triage metrics (Bronze / Silver / Gold SOC automation tiers)
+# ---------------------------------------------------------------------------
+triage_total = Counter(
+    "dr_triage_total",
+    "Triage decisions by tier, verdict, and rule",
+    ["tier", "verdict", "rule_id"],
+)
+triage_risk_score = Histogram(
+    "dr_triage_risk_score",
+    "LLM-assigned risk scores (1-10)",
+    buckets=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+)
+triage_gold_total = Counter(
+    "dr_triage_gold_total",
+    "Gold-tier escalations (immediate response required)",
+    ["rule_id"],
+)
+
 running = True
 
 
@@ -166,6 +185,23 @@ def _process_alert(alert: dict):
     alerts_by_user.labels(user_id=user_id, rule_id=rule_id).inc()
 
 
+def _process_triage(data: dict):
+    """Update Prometheus metrics for an LLM triage decision."""
+    triage = data.get("triage", {})
+    alert = data.get("alert", {})
+
+    tier = triage.get("tier", "unknown")
+    verdict = triage.get("verdict", "unknown")
+    rule_id = alert.get("rule_id", "unknown")
+    risk = triage.get("risk_score", 0)
+
+    triage_total.labels(tier=tier, verdict=verdict, rule_id=rule_id).inc()
+    triage_risk_score.observe(risk)
+
+    if tier == "gold":
+        triage_gold_total.labels(rule_id=rule_id).inc()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -190,13 +226,13 @@ def main():
         "auto.offset.reset": "latest",
         "enable.auto.commit": True,
     })
-    consumer.subscribe(["raw-api-events", "alerts"])
+    consumer.subscribe(["raw-api-events", "alerts", "triage-results"])
 
     count = 0
     window_start = time.time()
     window_count = 0
 
-    print("Exporter consuming from raw-api-events + alerts ...")
+    print("Exporter consuming from raw-api-events + alerts + triage-results ...")
 
     try:
         while running:
@@ -222,6 +258,8 @@ def main():
                 _process_raw_event(data)
             elif topic == "alerts":
                 _process_alert(data)
+            elif topic == "triage-results":
+                _process_triage(data)
 
             count += 1
             window_count += 1

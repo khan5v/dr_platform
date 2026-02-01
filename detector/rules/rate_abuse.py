@@ -19,3 +19,14 @@ class RateAbuse(Rule):
 
     def trigger(self, events):
         return len(events) > 60
+
+    def evidence(self, events):
+        api_reqs = sum(1 for e in events if e.get("event_type") == "api_request")
+        rate_limits = sum(1 for e in events if e.get("event_type") == "rate_limit_event")
+        timestamps = [e.get("timestamp", 0) for e in events]
+        span = max(timestamps) - min(timestamps) if len(timestamps) > 1 else 1
+        return {
+            "api_request_count": api_reqs,
+            "rate_limit_count": rate_limits,
+            "events_per_second": round(len(events) / max(span, 1), 2),
+        }

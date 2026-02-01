@@ -122,6 +122,33 @@ services:
       replicas: 3
 
   # ---------------------------------------------------------------------------
+  # LLM triage — Tier-1 SOC analyst (Bronze/Silver/Gold classification)
+  # ---------------------------------------------------------------------------
+
+  triage:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: >
+      python -m triage.main
+      --bootstrap-servers kafka-1:29092,kafka-2:29092,kafka-3:29092
+      --input-topic alerts
+      --output-topic triage-results
+      --anthropic-model ${ANTHROPIC_MODEL:-claude-haiku-35-20241022}
+      --mock
+    secrets:
+      - anthropic_api_key
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+      detector:
+        condition: service_started
+
+  # ---------------------------------------------------------------------------
   # Monitoring stack
   # ---------------------------------------------------------------------------
 
@@ -183,3 +210,12 @@ services:
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+
+# ---------------------------------------------------------------------------
+# Secrets — file-based, never embedded in image layers or env vars.
+# To enable real LLM triage: echo "sk-ant-..." > secrets/anthropic_api_key
+# and remove --mock from the triage command above.
+# ---------------------------------------------------------------------------
+secrets:
+  anthropic_api_key:
+    file: ../secrets/anthropic_api_key

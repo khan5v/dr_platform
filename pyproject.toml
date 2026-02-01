@@ -9,6 +9,7 @@ dependencies = [
     "prometheus-client>=0.21",
     "protobuf>=5.29",
     "requests>=2.32",
+    "anthropic>=0.40",
 ]
 
 [project.optional-dependencies]
@@ -17,4 +18,4 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["detector/tests"]
+testpaths = ["detector/tests", "triage/tests"]

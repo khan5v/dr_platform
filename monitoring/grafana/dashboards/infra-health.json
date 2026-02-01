@@ -139,8 +139,8 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Request Latency Percentiles",
-      "description": "API request latency distribution. P50 = typical experience. P99 = tail latency. P99 spiking while P50 stays flat means a small subset of requests (large contexts, complex prompts) is hitting edge cases.",
+      "title": "Simulated API Response Latency",
+      "description": "Response latency of simulated Claude API requests (from the generator's latency_ms field, not internal pipeline latency). P50 = typical experience. P99 = tail latency. P99 spiking while P50 stays flat means a small subset of requests (large contexts, complex prompts) is hitting edge cases.",
       "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
       "targets": [
         { "expr": "histogram_quantile(0.50, sum by (le) (rate(dr_request_latency_milliseconds_bucket[5m])))", "legendFormat": "p50" },
