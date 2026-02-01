@@ -4,41 +4,6 @@ Real-time Claude API abuse detection platform — streaming telemetry through Ka
 
 [Anthropic's RSA 2025 talk](https://www.youtube.com/watch?v=JRvQGRqMazA) on using LLMs to power SOC operations got me thinking about what that pipeline actually looks like end-to-end. This is a prototype: a complete detection-and-triage system that streams simulated Claude API telemetry through Kafka, runs sliding-window detection rules, and lets an LLM classify alerts into response tiers. It covers the full loop from event generation to analyst-ready triage output.
 
-## Project structure
-
-```
-dr_platform/
-├── generator/              # Simulated Claude API telemetry producer
-│   └── main.py
-├── detector/               # Sliding-window detection engine
-│   ├── engine.py           # Rule evaluator (no Kafka dependency)
-│   ├── sliding_window.py   # Deque-based per-key windowing
-│   ├── rules/
-│   │   ├── rate_abuse.py
-│   │   ├── prompt_injection.py
-│   │   └── token_abuse.py
-│   └── tests/
-├── triage/                 # LLM-powered alert classification
-│   ├── main.py             # Kafka consumer + Claude API / mock fallback
-│   ├── prompt.py           # System & user prompt construction
-│   ├── mock.py             # Deterministic triage (no API key needed)
-│   └── tests/
-├── exporter/               # Kafka → Prometheus metrics bridge
-│   └── main.py
-├── monitoring/
-│   ├── prometheus.yml
-│   └── grafana/
-│       ├── dashboards/     # 3 pre-built dashboards (JSON)
-│       └── provisioning/   # Auto-wired datasource + dashboard config
-├── docker/
-│   ├── Dockerfile
-│   └── docker-compose.yml  # Full stack: 15 containers
-├── secrets/                # API key mount point (gitignored)
-├── setup.sh
-├── pyproject.toml
-└── requirements.txt
-```
-
 ## Architecture
 
 ```mermaid
@@ -78,6 +43,41 @@ Data flows through three Kafka topics, each representing a stage in the SOC pipe
 | **Telemetry** | `raw-api-events` | Simulated Claude API traffic at ~50 eps — request metadata, token counts, latency, safety flags. Events are keyed by `user_id` so each user's activity lands on the same partition. |
 | **Detection** | `alerts` | Three detector replicas run sliding-window rules over the event stream. Threshold crossings produce alerts with severity and rule-specific evidence. |
 | **Triage** | `triage-results` | Each alert is classified — by an LLM or a deterministic mock — into a verdict (true positive / false positive / needs investigation), a risk score (1-10), and a response tier (P1 / P2 / P3). |
+
+## Project structure
+
+```
+dr_platform/
+├── generator/              # Simulated Claude API telemetry producer
+│   └── main.py
+├── detector/               # Sliding-window detection engine
+│   ├── engine.py           # Rule evaluator (no Kafka dependency)
+│   ├── sliding_window.py   # Deque-based per-key windowing
+│   ├── rules/
+│   │   ├── rate_abuse.py
+│   │   ├── prompt_injection.py
+│   │   └── token_abuse.py
+│   └── tests/
+├── triage/                 # LLM-powered alert classification
+│   ├── main.py             # Kafka consumer + Claude API / mock fallback
+│   ├── prompt.py           # System & user prompt construction
+│   ├── mock.py             # Deterministic triage (no API key needed)
+│   └── tests/
+├── exporter/               # Kafka → Prometheus metrics bridge
+│   └── main.py
+├── monitoring/
+│   ├── prometheus.yml
+│   └── grafana/
+│       ├── dashboards/     # 3 pre-built dashboards (JSON)
+│       └── provisioning/   # Auto-wired datasource + dashboard config
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml  # Full stack: 15 containers
+├── secrets/                # API key mount point (gitignored)
+├── setup.sh
+├── pyproject.toml
+└── requirements.txt
+```
 
 ## Detection rules
 
